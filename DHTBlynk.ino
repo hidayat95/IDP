@@ -5,7 +5,7 @@
 #define BLYNK_AUTH_TOKEN "qCpnWRLDvEaPZ0EMw7Y-ZCqrGOg68C2m"
 
 // Comment this out to disable prints and save space
-#define BLYNK_PRINT Serial
+//#define BLYNK_PRINT Serial
 
 #include <WiFi.h>
 #include <WiFiClient.h>
@@ -25,6 +25,30 @@ char pass[] = "12345678";
 int h;
 float t;
 
+
+// pin define //
+#define heater 13
+#define fan 12
+#define w_pump 14
+#define roller 5
+
+int ledState = LOW;             // ledState used to set the LED
+unsigned long previousMillis = 0;        // will store last time LED was updated
+long interval;           // interval at which to blink (milliseconds)
+unsigned long prevMillis = 0;
+
+const int Chick_Btn = 27;
+const int Quail_Btn = 26;
+const int Duck_Btn = 25;
+const int Goose_Btn = 33;
+int Chick_BtnState = 0;
+int Quail_BtnState = 0;
+int Duck_BtnState = 0;
+int Goose_BtnState = 0;
+
+const int micPin  = 34;
+int micVal  = 0;
+
 // incubator param //
 double App_Temp_Set;
 int App_Humid_Set;
@@ -39,35 +63,6 @@ float new_temp;
 int new_humid;
 int new_days;
 
-
-// pin define //
-#define heater 13
-#define fan 12
-#define w_pump 14
-#define roller 5
-
-int ledState = LOW;             // ledState used to set the LED
-unsigned long previousMillis = 0;        // will store last time LED was updated
-long interval;           // interval at which to blink (milliseconds)
-
-const int Chick_Btn = 27;
-const int Quail_Btn = 26;
-const int Duck_Btn = 25;
-const int Goose_Btn = 33;
-int Chick_BtnState = 0;
-int Quail_BtnState = 0;
-int Duck_BtnState = 0;
-int Goose_BtnState = 0;
-
-
-
-// Connect pin 1 (on the left) of the sensor to +5V
-// NOTE: If using a board with 3.3V logic like an Arduino Due connect pin 1
-// to 3.3V instead of 5V!
-// Connect pin 2 of the sensor to whatever your DHTPIN is
-// Connect pin 3 (on the right) of the sensor to GROUND (if your sensor has 3 pins)
-// Connect pin 4 (on the right) of the sensor to GROUND and leave the pin 3 EMPTY (if your sensor has 4 pins)
-// Connect a 10K resistor from pin 2 (data) to pin 1 (power) of the sensor
 
 // Set the LCD address to 0x27 for a 16 chars and 2 line display
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -85,6 +80,8 @@ void setup() {
   pinMode(Quail_Btn, INPUT);
   pinMode(Duck_Btn, INPUT);
   pinMode(Goose_Btn, INPUT);
+
+  pinMode(micPin, INPUT);
   
   Serial.begin(115200);
   Blynk.begin(auth, ssid, pass);
@@ -92,7 +89,6 @@ void setup() {
   dht.begin();
   lcd.begin();
   lcd.backlight();
-  //timer.setInterval(1000L, sendSensor);
 }
 
 void loop() {
@@ -104,9 +100,18 @@ void loop() {
   param_setting();
   timer.setInterval(1000L, sendSensor);
   timer.setInterval(1000L, sendUptime); 
- // temp_ctrl();
-  //egg_roll();
+  readMicrophone();
   inc_seq();
+
+  unsigned long curMillis = millis();
+  // if WiFi is down, try reconnecting every CHECK_WIFI_TIME seconds
+  if ((WiFi.status() != WL_CONNECTED) && (curMillis - prevMillis >=interval)) {
+    Serial.print(millis());
+    Serial.println("Reconnecting to WiFi...");
+    WiFi.disconnect();
+    WiFi.reconnect();
+    prevMillis = curMillis;
+  }
   
 
   Serial.print(new_temp);
@@ -142,6 +147,15 @@ void sendSensor()
 //  Serial.println(F("°C "));
 }
 
+// ================================================================
+// ===                      MIC SENSOR                          ===
+// ================================================================
+void readMicrophone() { /* function readMicrophone */
+  ////Test routine for Microphone
+  micVal = digitalRead(micPin);
+  Serial.print(F("mic val ")); Serial.println(micVal);
+}
+
 
 // ================================================================
 // ===                      TEMP CONTROL                       ===
@@ -160,7 +174,7 @@ void temp_ctrl(){
 
 
    // humidity
-   if (h < new_humid+5){
+   else if (h < new_humid+5){
     digitalWrite(fan, LOW); //fan off
     digitalWrite(w_pump, HIGH); //water pump on
     delay(5000);
@@ -190,10 +204,10 @@ void egg_roll(){
     previousMillis = currentMillis;
     if (ledState == LOW) {
       ledState = HIGH;
-      interval = 3000;  // roller on berapa lama
+      interval = 180000;  // roller on berapa lama , 3min
     } else {
       ledState = LOW;
-      interval = 5000;//(86400000/5);    // roller interval time, ikut sehari bahagi berapa kali nak pusing. 
+      interval = 60000;//(86400000/5);    // roller interval time, ikut sehari bahagi berapa kali nak pusing. 
     }
     digitalWrite(roller, ledState);
   }
@@ -206,23 +220,28 @@ void egg_roll(){
 // ================================================================
 void inc_seq(){
 
-  if((millis() / 60000) == new_days){  //86400000
+  if((millis() / 86400000) == new_days || micVal == HIGH){  //86400000 
     temp_ctrl_off();
-    Blynk.notify("Finished!");
+    Blynk.logEvent("incubation_finished","Incubation Finished!");
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print(" INCUBATION");
+    lcd.setCursor(0,1);
+    lcd.print("    ENDS");
   }
 
-  else if((millis() / 60000) < new_days){
+  else if((millis() / 86400000) < new_days){
     temp_ctrl();
   }
 
 
 
 ///// egg rolling mech //////
-  if((millis() / 60000) == (new_days-3)){  //86400000
+  if((millis() / 86400000) == (new_days-3) ){  //86400000|| micVal == HIGH
     digitalWrite(roller, LOW);  // turn off egg rolling
   }
 
-  else if((millis() / 60000) < (new_days-3)){
+  else if((millis() / 86400000) < (new_days-3)){
     egg_roll();
   }
 }
@@ -243,8 +262,11 @@ void Inc_Button(){
   if (Chick_BtnState == HIGH){
     //Serial.println("ada");
     inc_days = 21;
-    inc_temp = 29.8;  //38
+    inc_temp = 37;  //38
     inc_humid = 75;
+    Quail_BtnState = 0;
+    Duck_BtnState = 0;
+    Goose_BtnState = 0;
     while(Chick_BtnState == HIGH){
       lcd.clear();
       lcd.setCursor(0,0);
@@ -260,8 +282,11 @@ void Inc_Button(){
 
   if (Quail_BtnState == HIGH){
     inc_days = 18;
-    inc_temp = 29.8;  //36.5
+    inc_temp = 36.5;  //36.5
     inc_humid = 70;
+    Chick_BtnState = 0;
+    Duck_BtnState = 0;
+    Goose_BtnState = 0;
     while(Quail_BtnState == HIGH){
       lcd.clear();
       lcd.setCursor(0,0);
@@ -277,8 +302,11 @@ void Inc_Button(){
 
   if (Duck_BtnState == HIGH){
     inc_days = 28;
-    inc_temp = 31.8;  //37.0
+    inc_temp = 37.0;  //37.0
     inc_humid = 50;
+    Quail_BtnState = 0;
+    Chick_BtnState = 0;
+    Goose_BtnState = 0;
     while(Duck_BtnState == HIGH){
       lcd.clear();
       lcd.setCursor(0,0);
@@ -294,8 +322,11 @@ void Inc_Button(){
 
   if (Goose_BtnState == HIGH){
     inc_days = 32;
-    inc_temp = 31.8;  //37.0
+    inc_temp = 37.0;  //37.0
     inc_humid = 55;
+    Quail_BtnState = 0;
+    Duck_BtnState = 0;
+    Chick_BtnState = 0;
     while(Goose_BtnState == HIGH){
       lcd.clear();
       lcd.setCursor(0,0);
@@ -304,9 +335,9 @@ void Inc_Button(){
       lcd.clear();
       break;
     }
-    Serial.print(inc_temp);
-    Serial.print("  ");
-    Serial.println(inc_humid);
+//    Serial.print(inc_temp);
+//    Serial.print("  ");
+//    Serial.println(inc_humid);
   }
 
 //  else if(Chick_BtnState == LOW){
@@ -348,6 +379,7 @@ BLYNK_WRITE(V4)
 // ================================================================
 void LCD_DISP(){
 
+  lcd.clear();
   lcd.setCursor(0,0);
   lcd.print("DAY:");
   lcd.print(1+(millis() / 86400000)); //86400000
